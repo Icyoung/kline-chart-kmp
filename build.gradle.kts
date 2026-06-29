@@ -14,6 +14,11 @@ plugins {
 group = "io.github.icyoung"
 version = libs.versions.klineChart.get()
 
+val hasSigningCredentials =
+    providers.gradleProperty("signingInMemoryKey").isPresent ||
+        providers.environmentVariable("ORG_GRADLE_PROJECT_signingInMemoryKey").isPresent ||
+        providers.environmentVariable("SIGNING_IN_MEMORY_KEY").isPresent
+
 kotlin {
     androidLibrary {
         namespace = "io.github.icyoung"
@@ -72,7 +77,9 @@ publishing {
 
 mavenPublishing {
     publishToMavenCentral()
-    signAllPublications()
+    if (hasSigningCredentials) {
+        signAllPublications()
+    }
 
     coordinates(
         groupId = "io.github.icyoung",
