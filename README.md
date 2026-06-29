@@ -1,7 +1,6 @@
 # kline-chart-kmp
 
 [![KMP Maven Central](https://img.shields.io/maven-central/v/io.github.icyoung/kline-chart-kmp?label=KMP%20Maven%20Central&color=7F52FF)](https://central.sonatype.com/artifact/io.github.icyoung/kline-chart-kmp)
-[![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-kline--chart--kmp-181717?logo=github)](https://github.com/Icyoung/kline-chart-kmp/packages)
 [![GitHub tag](https://img.shields.io/github/v/tag/Icyoung/kline-chart-kmp?label=tag&color=0B7285)](https://github.com/Icyoung/kline-chart-kmp/tags)
 
 Kotlin Multiplatform OHLCV/K-line chart library built with Compose Multiplatform.
@@ -16,22 +15,6 @@ and custom panels.
 ```kotlin
 commonMain.dependencies {
     implementation("io.github.icyoung:kline-chart-kmp:0.1.0")
-}
-```
-
-For GitHub Packages snapshots or pre-Maven Central consumption:
-
-```kotlin
-repositories {
-    maven {
-        url = uri("https://maven.pkg.github.com/Icyoung/kline-chart-kmp")
-        credentials {
-            username = providers.gradleProperty("githubUser").orNull
-                ?: System.getenv("GITHUB_ACTOR")
-            password = providers.gradleProperty("githubToken").orNull
-                ?: System.getenv("GITHUB_TOKEN")
-        }
-    }
 }
 ```
 
@@ -130,17 +113,3 @@ xcodebuild -project sample/iosApp/iosApp.xcodeproj \
   -destination 'generic/platform=iOS Simulator' \
   build
 ```
-
-## Publish
-
-The project is configured for Maven Central and GitHub Packages using
-`com.vanniktech.maven.publish`.
-
-Local publish check:
-
-```bash
-./gradlew publishToMavenLocal
-```
-
-Maven Central publishing requires credentials and signing keys configured outside
-the repository, following the Vanniktech Maven Publish plugin conventions.
