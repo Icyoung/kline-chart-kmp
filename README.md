@@ -1,6 +1,6 @@
 # kline-chart-kmp
 
-[![KMP Maven Central](https://img.shields.io/maven-central/v/dev.icyou/kline-chart-kmp?label=KMP%20Maven%20Central&color=7F52FF)](https://central.sonatype.com/artifact/dev.icyou/kline-chart-kmp)
+[![KMP Maven Central](https://img.shields.io/maven-central/v/io.github.icyoung/kline-chart-kmp?label=KMP%20Maven%20Central&color=7F52FF)](https://central.sonatype.com/artifact/io.github.icyoung/kline-chart-kmp)
 [![GitHub tag](https://img.shields.io/github/v/tag/Icyoung/kline-chart-kmp?label=tag&color=0B7285)](https://github.com/Icyoung/kline-chart-kmp/tags)
 
 Kotlin Multiplatform OHLCV/K-line chart library built with Compose Multiplatform.
@@ -14,7 +14,7 @@ and custom panels.
 
 ```kotlin
 commonMain.dependencies {
-    implementation("dev.icyou:kline-chart-kmp:0.1.1")
+    implementation("io.github.icyoung:kline-chart-kmp:0.1.2")
 }
 ```
 

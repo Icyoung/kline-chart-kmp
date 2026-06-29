@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Changed Maven coordinates back to `io.github.icyoung:kline-chart-kmp`.
+
 ## 0.1.1
 
 - Changed Maven coordinates to `dev.icyou:kline-chart-kmp`.
