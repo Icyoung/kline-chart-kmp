@@ -1,0 +1,19 @@
+[versions]
+agp = "8.13.2"
+compileSdk = "36"
+compose = "1.9.3"
+coroutines = "1.10.2"
+kotlin = "2.3.0"
+klineChart = "0.1.0"
+mavenPublish = "0.35.0"
+minSdk = "26"
+
+[libraries]
+coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+
+[plugins]
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+compose = { id = "org.jetbrains.compose", version.ref = "compose" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
