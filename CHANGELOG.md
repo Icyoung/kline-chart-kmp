@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Changed Maven coordinates to `dev.icyou:kline-chart-kmp`.
+
 ## 0.1.0
 
 - Added Compose Multiplatform K-line chart component.

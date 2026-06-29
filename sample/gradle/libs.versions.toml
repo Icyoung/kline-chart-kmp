@@ -5,7 +5,7 @@ compileSdk = "36"
 compose = "1.9.3"
 coroutines = "1.10.2"
 datetime = "0.7.1"
-klineChart = "0.1.0"
+klineChart = "0.1.1"
 kotlin = "2.3.0"
 ktor = "3.3.2"
 minSdk = "26"
@@ -16,7 +16,7 @@ targetSdk = "36"
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
-kline-chart-kmp = { module = "io.github.icyoung:kline-chart-kmp", version.ref = "klineChart" }
+kline-chart-kmp = { module = "dev.icyou:kline-chart-kmp", version.ref = "klineChart" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }

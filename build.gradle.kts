@@ -11,7 +11,7 @@ plugins {
     alias(libs.plugins.maven.publish)
 }
 
-group = "io.github.icyoung"
+group = "dev.icyou"
 version = libs.versions.klineChart.get()
 
 val hasSigningCredentials =
@@ -82,7 +82,7 @@ mavenPublishing {
     }
 
     coordinates(
-        groupId = "io.github.icyoung",
+        groupId = "dev.icyou",
         artifactId = "kline-chart-kmp",
         version = libs.versions.klineChart.get(),
     )
