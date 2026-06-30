@@ -25,14 +25,18 @@ import io.github.icyoung.KlineChartConfig
 import io.github.icyoung.KlineCustomIndicator
 import io.github.icyoung.KlineIndicatorLine
 import io.github.icyoung.KlineIndicatorLineStyle
+import io.github.icyoung.KlineIndicatorPane
 import io.github.icyoung.KlineIndicatorRenderContext
+import io.github.icyoung.KlineIndicatorScaleMode
 import io.github.icyoung.KlineIndicatorSeries
 import io.github.icyoung.KlineIndicatorValues
 import io.github.icyoung.SubIndicator
 import io.github.icyoung.core.calculateValueY
 import io.github.icyoung.indicatorColor
+import io.github.icyoung.internal.axis.TimeAxisTick
 import io.github.icyoung.internal.render.drawLineIndicator
 import io.github.icyoung.internal.render.drawSar
+import io.github.icyoung.internal.render.drawTimeGridLines
 import io.github.icyoung.internal.render.drawVolumeBars
 import io.github.icyoung.internal.render.drawVolumeLine
 import io.github.icyoung.internal.render.formatCompact
@@ -52,6 +56,7 @@ internal fun CustomIndicatorPanel(
     candles: List<OhlcvCandle>,
     values: KlineIndicatorValues?,
     colors: KlineChartColors,
+    timeTicks: List<TimeAxisTick>,
     candleWidth: Float,
     candleSpacing: Float,
     xOffset: Float,
@@ -61,6 +66,7 @@ internal fun CustomIndicatorPanel(
     }
     val maxSeriesSize = indicatorValues.series.values.maxOfOrNull { it.size } ?: candles.size
     Box(Modifier.fillMaxSize().background(colors.background)) {
+        TimeGridBackground(colors = colors, timeTicks = timeTicks)
         IndicatorHeader(
             text = indicator.label,
             colors = colors,
@@ -94,12 +100,16 @@ internal fun VolumePanel(
     config: KlineChartConfig,
     colors: KlineChartColors,
     indicatorSeries: List<KlineIndicatorSeries>,
+    timeTicks: List<TimeAxisTick>,
     candleWidth: Float,
     candleSpacing: Float,
     xOffset: Float,
 ) {
-    val lines = indicatorSeries.firstOrNull { it.id == "VOL" }?.lines.orEmpty()
+    val lines = indicatorSeries
+        .filter { it.id == "VOL" || (it.pane == KlineIndicatorPane.Sub && it.overlayId == "VOL") }
+        .flatMap { it.lines }
     Box(Modifier.fillMaxSize().background(colors.background)) {
+        TimeGridBackground(colors = colors, timeTicks = timeTicks)
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
                 config.volumePanel.label,
@@ -122,9 +132,42 @@ internal fun VolumePanel(
             val maxVolume = visibleMax(candles, candleWidth, candleSpacing, xOffset, size.width) { it.volume }
                 .coerceAtLeast(1.0)
             drawVolumeBars(candles, candleWidth, candleSpacing, xOffset, maxVolume, colors)
-            lines.forEachIndexed { index, line ->
-                drawVolumeLine(line.values, candleWidth, candleSpacing, xOffset, maxVolume, colors.indicatorColor(index))
-            }
+            var colorIndex = 0
+            indicatorSeries
+                .filter { it.id == "VOL" || (it.pane == KlineIndicatorPane.Sub && it.overlayId == "VOL") }
+                .forEach { series ->
+                    val visible = visibleIndexRange(
+                        series.lines.maxOfOrNull { it.values.size } ?: 0,
+                        candleWidth,
+                        candleSpacing,
+                        xOffset,
+                        size.width,
+                    )
+                    val range = when (series.scaleMode) {
+                        KlineIndicatorScaleMode.SharedPriceAxis -> 0.0 to maxVolume
+                        KlineIndicatorScaleMode.IndependentAxis -> visibleMinMax(
+                            candleWidth,
+                            candleSpacing,
+                            xOffset,
+                            size.width,
+                            *series.lines.map { it.values }.toTypedArray(),
+                        )
+                    }
+                    series.lines.forEachIndexed { lineIndex, line ->
+                        drawIndicatorLine(
+                            line = line,
+                            visible = visible,
+                            candleWidth = candleWidth,
+                            candleSpacing = candleSpacing,
+                            xOffset = xOffset,
+                            minValue = range.first,
+                            maxValue = range.second,
+                            color = colors.indicatorColor(colorIndex + lineIndex),
+                            colors = colors,
+                        )
+                    }
+                    colorIndex += series.lines.size
+                }
         }
     }
 }
@@ -135,17 +178,21 @@ internal fun SubIndicatorPanel(
     config: KlineChartConfig,
     colors: KlineChartColors,
     indicatorSeries: List<KlineIndicatorSeries>,
+    timeTicks: List<TimeAxisTick>,
     candleWidth: Float,
     candleSpacing: Float,
     xOffset: Float,
     onMacdRangeChanged: (Pair<Double, Double>) -> Unit,
 ) {
-    val series = indicatorSeries.firstOrNull { it.id == indicator.name }
+    val series = indicatorSeries.filter {
+        it.id == indicator.name || (it.pane == KlineIndicatorPane.Sub && it.overlayId == indicator.name)
+    }
     GenericSubIndicatorPanel(
         indicator = indicator,
         config = config,
         colors = colors,
         series = series,
+        timeTicks = timeTicks,
         candleWidth = candleWidth,
         candleSpacing = candleSpacing,
         xOffset = xOffset,
@@ -158,14 +205,16 @@ private fun GenericSubIndicatorPanel(
     indicator: SubIndicator,
     config: KlineChartConfig,
     colors: KlineChartColors,
-    series: KlineIndicatorSeries?,
+    series: List<KlineIndicatorSeries>,
+    timeTicks: List<TimeAxisTick>,
     candleWidth: Float,
     candleSpacing: Float,
     xOffset: Float,
     onMacdRangeChanged: (Pair<Double, Double>) -> Unit,
 ) {
-    val lines = series?.lines.orEmpty()
+    val lines = series.flatMap { it.lines }
     Box(Modifier.fillMaxSize().background(colors.background)) {
+        TimeGridBackground(colors = colors, timeTicks = timeTicks)
         IndicatorHeader(
             text = indicatorHeader(indicator, config),
             colors = colors,
@@ -177,20 +226,98 @@ private fun GenericSubIndicatorPanel(
             }
             if (lines.isEmpty()) return@Canvas
 
-            val range = when (indicator) {
+            val sharedSeries = series.filter { it.scaleMode == KlineIndicatorScaleMode.SharedPriceAxis }
+            val independentSeries = series.filter { it.scaleMode == KlineIndicatorScaleMode.IndependentAxis }
+            val sharedLines = sharedSeries.flatMap { it.lines }
+            val sharedRange = when (indicator) {
                 SubIndicator.RSI, SubIndicator.WR -> 0.0 to 100.0
                 else -> visibleMinMax(
                     candleWidth,
                     candleSpacing,
                     xOffset,
                     size.width,
-                    *lines.map { it.values }.toTypedArray(),
+                    *sharedLines.map { it.values }.toTypedArray(),
                 )
             }
             if (indicator == SubIndicator.MACD) {
-                onMacdRangeChanged(range)
+                onMacdRangeChanged(sharedRange)
             }
 
+            val visible = visibleIndexRange(
+                lines.maxOfOrNull { it.values.size } ?: 0,
+                candleWidth,
+                candleSpacing,
+                xOffset,
+                size.width,
+            )
+            var colorIndex = 0
+            sharedLines.forEachIndexed { index, line ->
+                drawIndicatorLine(
+                    line = line,
+                    visible = visible,
+                    candleWidth = candleWidth,
+                    candleSpacing = candleSpacing,
+                    xOffset = xOffset,
+                    minValue = sharedRange.first,
+                    maxValue = sharedRange.second,
+                    color = colors.indicatorColor(index),
+                    colors = colors,
+                )
+            }
+            colorIndex += sharedLines.size
+            independentSeries.forEach { independent ->
+                val range = visibleMinMax(
+                    candleWidth,
+                    candleSpacing,
+                    xOffset,
+                    size.width,
+                    *independent.lines.map { it.values }.toTypedArray(),
+                )
+                independent.lines.forEachIndexed { lineIndex, line ->
+                    drawIndicatorLine(
+                        line = line,
+                        visible = visible,
+                        candleWidth = candleWidth,
+                        candleSpacing = candleSpacing,
+                        xOffset = xOffset,
+                        minValue = range.first,
+                        maxValue = range.second,
+                        color = colors.indicatorColor(colorIndex + lineIndex),
+                        colors = colors,
+                    )
+                }
+                colorIndex += independent.lines.size
+            }
+        }
+    }
+}
+
+@Composable
+internal fun IndicatorSeriesPanel(
+    series: KlineIndicatorSeries,
+    colors: KlineChartColors,
+    timeTicks: List<TimeAxisTick>,
+    candleWidth: Float,
+    candleSpacing: Float,
+    xOffset: Float,
+) {
+    val lines = series.lines
+    Box(Modifier.fillMaxSize().background(colors.background)) {
+        TimeGridBackground(colors = colors, timeTicks = timeTicks)
+        IndicatorHeader(
+            text = series.label,
+            colors = colors,
+            values = lines,
+        )
+        Canvas(Modifier.fillMaxSize().padding(top = 20.dp).clipToBounds()) {
+            if (lines.isEmpty()) return@Canvas
+            val range = visibleMinMax(
+                candleWidth,
+                candleSpacing,
+                xOffset,
+                size.width,
+                *lines.map { it.values }.toTypedArray(),
+            )
             val visible = visibleIndexRange(lines.first().values.size, candleWidth, candleSpacing, xOffset, size.width)
             lines.forEachIndexed { index, line ->
                 drawIndicatorLine(
@@ -206,6 +333,23 @@ private fun GenericSubIndicatorPanel(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun TimeGridBackground(
+    colors: KlineChartColors,
+    timeTicks: List<TimeAxisTick>,
+) {
+    Canvas(Modifier.fillMaxSize().clipToBounds()) {
+        drawTimeGridLines(colors.grid, size.height, timeTicks)
+        val stroke = 0.5.dp.toPx()
+        drawLine(
+            color = colors.grid,
+            start = Offset(0f, size.height - stroke / 2f),
+            end = Offset(size.width, size.height - stroke / 2f),
+            strokeWidth = stroke,
+        )
     }
 }
 

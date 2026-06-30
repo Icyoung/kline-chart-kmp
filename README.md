@@ -14,7 +14,7 @@ and custom panels.
 
 ```kotlin
 commonMain.dependencies {
-    implementation("io.github.icyoung:kline-chart-kmp:0.1.2")
+    implementation("io.github.icyoung:kline-chart-kmp:0.1.3")
 }
 ```
 
@@ -67,6 +67,7 @@ published library.
 - Pinch zoom, horizontal drag, inertia, and load-more callback.
 - Volume panel and built-in technical indicators: MA, EMA, BOLL, SAR, MACD, RSI, KDJ, WR, OBV.
 - Background indicator computation with cached realtime tail updates where the formula supports exact lookback calculation.
+- Generic `KlineIndicator` registration for main-chart overlays, existing sub-panel overlays, and new sub-panels.
 - Configurable latest-price source through `LastPriceMode`.
 - Configurable crosshair release behavior through `CrosshairDismiss`.
 - Optional entrance and panel add/remove animations.
@@ -89,6 +90,41 @@ published library.
 - `KlineCustomIndicator`: custom indicator calculation and drawing.
 - `KlineIndicator`: reusable indicator formula abstraction for built-in and custom series.
 - `CandleRenderer`: replaceable candle renderer.
+
+## Custom Indicators
+
+Use `indicators` for reusable formula-based indicators:
+
+```kotlin
+KlineChart(
+    dataState = dataState,
+    indicators = listOf(
+        klineIndicator(id = "MA120", pane = KlineIndicatorPane.Main, lookback = 120) { candles ->
+            listOf(KlineIndicatorLine("MA120", TechnicalIndicators.calculateMA(candles, 120) { it.close }))
+        },
+        klineIndicator(id = "MY_MACD_LINE", pane = KlineIndicatorPane.Sub, overlayId = "MACD") { candles ->
+            listOf(KlineIndicatorLine("X", candles.map { it.close }))
+        },
+        klineIndicator(id = "MY_PANEL", pane = KlineIndicatorPane.Sub, label = "MY") { candles ->
+            listOf(KlineIndicatorLine("C", candles.map { it.close }))
+        },
+        klineIndicator(
+            id = "BTC_MA20",
+            pane = KlineIndicatorPane.Main,
+            sourceCandles = btcCandles,
+            showLatestValue = true,
+        ) { btc ->
+            listOf(KlineIndicatorLine("BTC MA20", TechnicalIndicators.calculateMA(btc, 20) { it.close }))
+        },
+    ),
+)
+```
+
+- `pane = KlineIndicatorPane.Main`: draw on the main chart.
+- `pane = KlineIndicatorPane.Sub` with `overlayId`: draw on an existing sub-panel such as `VOL`, `MACD`, `RSI`, `KDJ`, `WR`, or `OBV`.
+- `pane = KlineIndicatorPane.Sub` without `overlayId`: create a new sub-panel.
+- `sourceCandles`: calculate the indicator from another candle stream and align it back to the chart candles by timestamp. It uses an independent hidden axis by default, so different price levels can be overlaid as trend lines. Use `alignment = KlineIndicatorAlignment.Index` for index-based alignment, or `scaleMode = KlineIndicatorScaleMode.SharedPriceAxis` when the values should share the main price axis.
+- `showLatestValue = true`: show the indicator's latest visible value with the same dashed line and right-side label behavior as the latest price overlay.
 
 Implementation packages under `io.github.icyoung.internal.*` are not stable API.
 

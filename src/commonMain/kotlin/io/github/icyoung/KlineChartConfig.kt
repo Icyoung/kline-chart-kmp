@@ -36,6 +36,7 @@ data class KlineChartConfig(
     val panelAnimation: Boolean = false,
     val priceAxisTickCount: Int = 6,
     val timeAxisLabelCount: Int = 4,
+    val timeAxisFadeAnimation: Boolean = false,
     val lineStyle: KlineLineStyle = KlineLineStyle(),
     val markerStyle: KlineMarkerStyle = KlineMarkerStyle(),
     val volumePanel: VolumeIndicatorSpec = VolumeIndicatorSpec(),
@@ -72,6 +73,7 @@ data class KlineChartConfig(
             showPriceAxis = showPriceAxis,
             priceAxisTickCount = priceAxisTickCount,
             timeAxisLabelCount = timeAxisLabelCount,
+            timeAxisFadeAnimation = timeAxisFadeAnimation,
             timeLabelFormatter = timeLabelFormatter,
         )
 
@@ -130,6 +132,7 @@ data class KlineAxisConfig(
     val showPriceAxis: Boolean = true,
     val priceAxisTickCount: Int = 6,
     val timeAxisLabelCount: Int = 4,
+    val timeAxisFadeAnimation: Boolean = false,
     val timeLabelFormatter: (timestamp: Long) -> String = { it.toString() },
 )
 
@@ -236,6 +239,7 @@ fun KlineChartConfig(
         panelAnimation = overlays.panelAnimation,
         priceAxisTickCount = axis.priceAxisTickCount,
         timeAxisLabelCount = axis.timeAxisLabelCount,
+        timeAxisFadeAnimation = axis.timeAxisFadeAnimation,
         lineStyle = lineStyle,
         markerStyle = markerStyle,
         volumePanel = volumePanel,

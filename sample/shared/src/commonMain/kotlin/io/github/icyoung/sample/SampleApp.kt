@@ -46,10 +46,14 @@ import io.github.icyoung.KlineChartColors
 import io.github.icyoung.KlineChartConfig
 import io.github.icyoung.KlineCustomIndicator
 import io.github.icyoung.KlineHistoryMarker
+import io.github.icyoung.KlineIndicatorAlignment
+import io.github.icyoung.KlineIndicatorLine
+import io.github.icyoung.KlineIndicatorPane
 import io.github.icyoung.KlineIndicatorValues
 import io.github.icyoung.KlineMarkerPlacement
 import io.github.icyoung.MainIndicator
 import io.github.icyoung.SubIndicator
+import io.github.icyoung.klineIndicator
 import io.github.icyoung.model.OhlcvCandle
 import io.github.icyoung.rememberKlineChartDataState
 import io.github.icyoung.sample.data.MarketInstrument
@@ -60,6 +64,9 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 private val SampleBars = listOf("1m", "5m", "15m", "1h", "4h", "1d")
+private const val BtcInstrumentId = "BTCUSDT"
+private const val InitialCandleLimit = 180
+private const val HistoricalCandleLimit = 120
 private const val VwapIndicatorId = "VWAP"
 private val MainIndicatorTabs = KlineBuiltInIndicatorSpecs.mainIndicators.map { it.id }.toSet()
 private val SubIndicatorTabs = listOf(KlineBuiltInIndicatorSpecs.VOL.id) +
@@ -74,11 +81,12 @@ fun SampleApp() {
     var instruments by remember { mutableStateOf<List<MarketInstrument>>(emptyList()) }
     var selectedInstrumentId by remember { mutableStateOf("BTCUSDT") }
     var selectedBar by remember { mutableStateOf("1m") }
-    val dataState = rememberKlineChartDataState(sampleCandles())
+    val dataState = rememberKlineChartDataState()
     val candles = dataState.candles
+    var btcOverlayCandles by remember { mutableStateOf<List<OhlcvCandle>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var isLoadingMore by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Sample data") }
+    var status by remember { mutableStateOf("Loading") }
     var selectedMainIndicators by remember { mutableStateOf(setOf("MA")) }
     var selectedSubIndicators by remember { mutableStateOf(setOf("VOL")) }
 
@@ -87,13 +95,34 @@ fun SampleApp() {
             isLoading = true
             status = "Loading $instrumentId $bar"
             runCatching {
-                dataSource.candles(instrumentId = instrumentId, bar = bar, limit = 180)
+                val remoteCandles = dataSource.candles(
+                    instrumentId = instrumentId,
+                    bar = bar,
+                    limit = InitialCandleLimit,
+                )
+                val remoteBtcCandles = if (instrumentId == BtcInstrumentId) {
+                    emptyList()
+                } else {
+                    dataSource.candles(
+                        instrumentId = BtcInstrumentId,
+                        bar = bar,
+                        limit = InitialCandleLimit,
+                    )
+                }
+                remoteCandles to remoteBtcCandles
             }.onSuccess { remoteCandles ->
-                dataState.replaceAll(remoteCandles.ifEmpty { sampleCandles() })
-                status = if (remoteCandles.isEmpty()) "Sample data" else "Binance $instrumentId $bar"
+                val (instrumentCandles, overlayCandles) = remoteCandles
+                dataState.replaceAll(instrumentCandles)
+                btcOverlayCandles = overlayCandles
+                status = if (instrumentCandles.isEmpty()) {
+                    "No data"
+                } else {
+                    "Binance $instrumentId $bar"
+                }
             }.onFailure { error ->
-                dataState.replaceAll(sampleCandles())
-                status = error.message?.takeIf { it.isNotBlank() } ?: "Sample data"
+                dataState.replaceAll(emptyList())
+                btcOverlayCandles = emptyList()
+                status = error.message?.takeIf { it.isNotBlank() } ?: "Load failed"
             }
             isLoading = false
         }
@@ -106,14 +135,31 @@ fun SampleApp() {
             isLoadingMore = true
             status = "Loading earlier $selectedInstrumentId $selectedBar"
             runCatching {
-                dataSource.candles(
+                val historicalCandles = dataSource.candles(
                     instrumentId = selectedInstrumentId,
                     bar = selectedBar,
-                    limit = 120,
+                    limit = HistoricalCandleLimit,
                     endTimeMillis = firstTimestamp - 1L,
                 )
+                val btcHistoricalCandles = if (selectedInstrumentId == BtcInstrumentId) {
+                    emptyList()
+                } else {
+                    dataSource.candles(
+                        instrumentId = BtcInstrumentId,
+                        bar = selectedBar,
+                        limit = HistoricalCandleLimit,
+                        endTimeMillis = firstTimestamp - 1L,
+                    )
+                }
+                historicalCandles to btcHistoricalCandles
             }.onSuccess { historicalCandles ->
-                val inserted = dataState.prepend(historicalCandles)
+                val (instrumentHistory, btcHistory) = historicalCandles
+                val inserted = dataState.prepend(instrumentHistory)
+                if (btcHistory.isNotEmpty()) {
+                    btcOverlayCandles = (btcHistory + btcOverlayCandles)
+                        .distinctBy { it.timestamp }
+                        .sortedBy { it.timestamp }
+                }
                 status = if (inserted > 0) {
                     "Loaded $inserted earlier candles"
                 } else {
@@ -131,11 +177,11 @@ fun SampleApp() {
         runCatching { dataSource.instruments() }
             .onSuccess { remoteInstruments ->
                 instruments = remoteInstruments
-                selectedInstrumentId = remoteInstruments.firstOrNull { it.id == "BTCUSDT" }?.id
+                selectedInstrumentId = remoteInstruments.firstOrNull { it.id == BtcInstrumentId }?.id
                     ?: remoteInstruments.firstOrNull()?.id
                     ?: selectedInstrumentId
             }
-            .onFailure { status = it.message?.takeIf(String::isNotBlank) ?: "Sample data" }
+            .onFailure { status = it.message?.takeIf(String::isNotBlank) ?: "Load failed" }
         isLoading = false
         loadCandles(selectedInstrumentId, selectedBar)
     }
@@ -160,6 +206,29 @@ fun SampleApp() {
                 emptyList()
             }
             val historyMarkers = remember(candles) { candles.toSampleHistoryMarkers() }
+            val btcTrendIndicators = remember(selectedInstrumentId, btcOverlayCandles) {
+                if (selectedInstrumentId == BtcInstrumentId || btcOverlayCandles.isEmpty()) {
+                    emptyList()
+                } else {
+                    listOf(
+                        klineIndicator(
+                            id = "BTC_TREND",
+                            pane = KlineIndicatorPane.Main,
+                            label = "BTC",
+                            sourceCandles = btcOverlayCandles,
+                            alignment = KlineIndicatorAlignment.Timestamp,
+                            showLatestValue = true,
+                        ) { sourceCandles ->
+                            listOf(
+                                KlineIndicatorLine(
+                                    name = "BTC",
+                                    values = sourceCandles.map { it.close },
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
             val volumePanelHeight = if ("VOL" in selectedSubIndicators) 104.dp else 0.dp
             val indicatorPanelsHeight = (104 * (subIndicators.size + customIndicators.size)).dp
             val chartHeight = maxWidth + 16.dp + volumePanelHeight + indicatorPanelsHeight
@@ -209,10 +278,12 @@ fun SampleApp() {
                             subIndicators = subIndicators,
                             maPeriods = listOf(7, 20, 99),
                             volumeMaPeriods = listOf(5, 10),
-                            timeAxisLabelCount = 3,
+                            timeAxisLabelCount = 4,
+                            timeAxisFadeAnimation = true,
                             timeLabelFormatter = ::formatAxisTime,
                         ),
                         colors = TradingChartColors,
+                        indicators = btcTrendIndicators,
                         historyMarkers = historyMarkers,
                         customIndicators = customIndicators,
                         onHistoryMarkerClick = { marker ->
@@ -609,25 +680,4 @@ private fun formatAxisTime(timestamp: Long): String {
 
 private fun Int.twoDigits(): String {
     return if (this < 10) "0$this" else toString()
-}
-
-private fun sampleCandles(): List<OhlcvCandle> {
-    var price = 100.0
-    return List(160) { index ->
-        val wave = ((index % 18) - 9) * 0.18
-        val open = price
-        val close = (open + wave + if (index % 5 == 0) 0.8 else -0.25).coerceAtLeast(1.0)
-        val high = maxOf(open, close) + 1.2 + (index % 4) * 0.15
-        val low = minOf(open, close) - 1.0 - (index % 3) * 0.12
-        price = close
-        OhlcvCandle(
-            timestamp = 1_700_000_000_000L + index * 60_000L,
-            endTimestamp = 1_700_000_000_000L + (index + 1) * 60_000L - 1L,
-            open = open,
-            high = high,
-            low = low,
-            close = close,
-            volume = 1_000.0 + index * 12.0,
-        )
-    }
 }

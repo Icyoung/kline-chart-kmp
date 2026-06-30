@@ -1,8 +1,8 @@
 package io.github.icyoung
 
-import androidx.compose.foundation.background
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +33,9 @@ import io.github.icyoung.core.hitTestOverlayLine
 import io.github.icyoung.internal.axis.LatestPriceLabel
 import io.github.icyoung.internal.axis.PriceAxisLabels
 import io.github.icyoung.internal.axis.TimeAxis
+import io.github.icyoung.internal.axis.TimeAxisAnchorSet
+import io.github.icyoung.internal.axis.calculateTimeAxisAnchorSet
+import io.github.icyoung.internal.axis.projectTimeAxisTicks
 import io.github.icyoung.internal.gesture.ChartGestureState
 import io.github.icyoung.internal.gesture.klineGestures
 import io.github.icyoung.internal.layout.ChartPanel
@@ -40,10 +43,14 @@ import io.github.icyoung.internal.overlay.CrosshairInfoPanel
 import io.github.icyoung.internal.overlay.CrosshairOverlay
 import io.github.icyoung.internal.overlay.OverlayLineLayer
 import io.github.icyoung.internal.panel.CustomIndicatorPanel
+import io.github.icyoung.internal.panel.IndicatorSeriesPanel
 import io.github.icyoung.internal.panel.SubIndicatorPanel
 import io.github.icyoung.internal.panel.VolumePanel
 import io.github.icyoung.internal.render.MainChartCanvas
 import io.github.icyoung.internal.render.MainIndicatorLabels
+import io.github.icyoung.internal.render.latestVisibleValue
+import io.github.icyoung.internal.render.visibleIndexRange
+import io.github.icyoung.internal.render.visibleMinMax
 import io.github.icyoung.model.OhlcvCandle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -66,6 +73,7 @@ fun KlineChart(
     historyMarkers: List<KlineHistoryMarker> = emptyList(),
     overlayLines: List<KlineOverlayLine> = emptyList(),
     overlayStyle: KlineOverlayStyle = KlineOverlayStyle(),
+    indicators: List<KlineIndicator> = emptyList(),
     customIndicators: List<KlineCustomIndicator> = emptyList(),
     customPanels: List<KlinePanelSpec> = emptyList(),
     onOverlayLineClick: (KlineOverlayLineHit) -> Unit = {},
@@ -83,6 +91,7 @@ fun KlineChart(
         historyMarkers = historyMarkers,
         overlayLines = overlayLines,
         overlayStyle = overlayStyle,
+        indicators = indicators,
         customIndicators = customIndicators,
         customPanels = customPanels,
         onOverlayLineClick = onOverlayLineClick,
@@ -107,6 +116,7 @@ fun KlineChart(
     historyMarkers: List<KlineHistoryMarker> = emptyList(),
     overlayLines: List<KlineOverlayLine> = emptyList(),
     overlayStyle: KlineOverlayStyle = KlineOverlayStyle(),
+    indicators: List<KlineIndicator> = emptyList(),
     customIndicators: List<KlineCustomIndicator> = emptyList(),
     customPanels: List<KlinePanelSpec> = emptyList(),
     onOverlayLineClick: (KlineOverlayLineHit) -> Unit = {},
@@ -128,8 +138,18 @@ fun KlineChart(
         .coerceIn(config.minCandleWidth, config.maxCandleWidth)
     val candleSpacing = config.candleSpacing
     val indicatorCache = remember { KlineIndicatorSeriesCache() }
-    val indicatorDefinitions = remember(config, customIndicators) {
-        config.builtInIndicators() + customIndicators.map { it.asIndicator() }
+    val builtInIndicatorDefinitions = remember(config) { config.builtInIndicators() }
+    val legacyCustomIndicatorDefinitions = remember(customIndicators) {
+        customIndicators.map { it.asIndicator() }
+    }
+    val indicatorDefinitions = remember(builtInIndicatorDefinitions, indicators, legacyCustomIndicatorDefinitions) {
+        builtInIndicatorDefinitions + indicators + legacyCustomIndicatorDefinitions
+    }
+    val standaloneExternalSubIndicatorIds = remember(indicators) {
+        indicators
+            .filter { it.pane == KlineIndicatorPane.Sub && it.overlayId == null }
+            .map { it.id }
+            .toSet()
     }
     val indicatorSeries by produceState(
         initialValue = emptyList<KlineIndicatorSeries>(),
@@ -148,11 +168,39 @@ fun KlineChart(
     var visibleMax by remember { mutableStateOf(100.0) }
     var macdRange by remember { mutableStateOf(0.0 to 0.0) }
     var latestVisiblePrice by remember { mutableStateOf<Double?>(null) }
+    val candleTimestamps = remember(candles) { candles.map { it.timestamp } }
+    var timeAxisAnchorSet by remember { mutableStateOf<TimeAxisAnchorSet?>(null) }
+    var anchorCandleWidth by remember { mutableStateOf(0f) }
+    var anchorCandleSpacing by remember { mutableStateOf(0f) }
+    var anchorCanvasWidth by remember { mutableStateOf(0f) }
+    var anchorLabelCount by remember { mutableStateOf(0) }
     val entranceProgress = remember { Animatable(if (config.entranceAnimation) 0f else 1f) }
+    var hasPlayedEntranceAnimation by remember { mutableStateOf(!config.entranceAnimation) }
 
     val scrollBounds = remember(candles.size, candleWidth, candleSpacing, gestureState.canvasSize.width) {
         if (gestureState.canvasSize == Size.Zero) 0f to 0f
         else calculateScrollBounds(candles.size, candleWidth, candleSpacing, gestureState.canvasSize.width)
+    }
+    val timeTicks = remember(
+        timeAxisAnchorSet,
+        candleTimestamps,
+        candleWidth,
+        candleSpacing,
+        gestureState.xOffset,
+        gestureState.canvasSize.width,
+        config.timeAxisLabelCount,
+        config.timeAxisFadeAnimation,
+    ) {
+        projectTimeAxisTicks(
+            anchorSet = timeAxisAnchorSet,
+            candleTimestamps = candleTimestamps,
+            candleWidth = candleWidth,
+            candleSpacing = candleSpacing,
+            xOffset = gestureState.xOffset,
+            canvasWidth = gestureState.canvasSize.width,
+            labelCount = config.timeAxisLabelCount,
+            fadeAnimation = config.timeAxisFadeAnimation,
+        )
     }
     val currentFirstTimestamp = candles.firstOrNull()?.timestamp
     val currentLastTimestamp = candles.lastOrNull()?.timestamp
@@ -175,6 +223,12 @@ fun KlineChart(
         if (isHistoricalPrepend) {
             gestureState.markHistoricalDataLoaded()
         }
+        val prependedCount = if (isHistoricalPrepend) candles.size - previousCount else 0
+        if (prependedCount > 0) {
+            timeAxisAnchorSet = timeAxisAnchorSet?.let { anchor ->
+                anchor.copy(originIndex = anchor.originIndex + prependedCount)
+            }
+        }
         gestureState.syncViewport(
             candleCount = candles.size,
             candleWidth = candleWidth,
@@ -182,6 +236,27 @@ fun KlineChart(
             leftBound = scrollBounds.first,
             rightBound = scrollBounds.second,
         )
+        val canvasWidth = gestureState.canvasSize.width
+        val shouldRecalculateTimeAnchors = timeAxisAnchorSet == null ||
+            isReplacement ||
+            candleWidth != anchorCandleWidth ||
+            candleSpacing != anchorCandleSpacing ||
+            canvasWidth != anchorCanvasWidth ||
+            config.timeAxisLabelCount != anchorLabelCount
+        if (shouldRecalculateTimeAnchors) {
+            timeAxisAnchorSet = calculateTimeAxisAnchorSet(
+                candleTimestamps = candleTimestamps,
+                candleWidth = candleWidth,
+                candleSpacing = candleSpacing,
+                xOffset = gestureState.xOffset,
+                canvasWidth = canvasWidth,
+                labelCount = config.timeAxisLabelCount,
+            )
+            anchorCandleWidth = candleWidth
+            anchorCandleSpacing = candleSpacing
+            anchorCanvasWidth = canvasWidth
+            anchorLabelCount = config.timeAxisLabelCount
+        }
         state.zoom = gestureState.zoom
         state.xOffset = gestureState.xOffset
         state.canvasSize = gestureState.canvasSize
@@ -194,12 +269,21 @@ fun KlineChart(
         previousLastTimestamp = currentLastTimestamp
     }
 
-    LaunchedEffect(config.entranceAnimation) {
-        if (!config.entranceAnimation) {
-            entranceProgress.snapTo(1f)
-        } else {
-            entranceProgress.snapTo(0f)
-            entranceProgress.animateTo(1f, tween(durationMillis = 900))
+    LaunchedEffect(config.entranceAnimation, candles.isNotEmpty()) {
+        when {
+            !config.entranceAnimation -> {
+                entranceProgress.snapTo(1f)
+                hasPlayedEntranceAnimation = true
+            }
+            candles.isEmpty() -> {
+                entranceProgress.snapTo(0f)
+                hasPlayedEntranceAnimation = false
+            }
+            !hasPlayedEntranceAnimation -> {
+                entranceProgress.snapTo(0f)
+                entranceProgress.animateTo(1f, tween(durationMillis = 900))
+                hasPlayedEntranceAnimation = true
+            }
         }
     }
 
@@ -274,6 +358,7 @@ fun KlineChart(
                     gestureState = gestureState,
                     candleWidth = candleWidth,
                     candleSpacing = candleSpacing,
+                    timeTicks = timeTicks,
                     onRangeChanged = { minValue, maxValue ->
                         visibleMin = minValue
                         visibleMax = maxValue
@@ -326,6 +411,52 @@ fun KlineChart(
                                 .fillMaxSize(),
                         )
                     }
+                    if (candles.isNotEmpty()) {
+                        val mainVisibleRange = visibleIndexRange(
+                            dataSize = candles.size,
+                            candleWidth = candleWidth,
+                            candleSpacing = candleSpacing,
+                            xOffset = gestureState.xOffset,
+                            canvasWidth = gestureState.canvasSize.width,
+                        )
+                        var indicatorColorIndex = 0
+                        indicatorSeries
+                            .filter { it.pane == KlineIndicatorPane.Main }
+                            .forEach { series ->
+                                if (series.showLatestValue) {
+                                    val range = when (series.scaleMode) {
+                                        KlineIndicatorScaleMode.SharedPriceAxis -> visibleMin to visibleMax
+                                        KlineIndicatorScaleMode.IndependentAxis -> visibleMinMax(
+                                            candleWidth,
+                                            candleSpacing,
+                                            gestureState.xOffset,
+                                            gestureState.canvasSize.width,
+                                            *series.lines.map { it.values }.toTypedArray(),
+                                        )
+                                    }
+                                    series.lines.forEachIndexed { lineIndex, line ->
+                                        val latest = line.latestVisibleValue(
+                                            mode = config.lastPriceMode,
+                                            visibleRange = mainVisibleRange,
+                                            lastIndex = candles.lastIndex,
+                                        ) ?: return@forEachIndexed
+                                        LatestPriceLabel(
+                                            price = latest.value,
+                                            minPrice = range.first,
+                                            maxPrice = range.second,
+                                            precision = config.pricePrecision,
+                                            colors = colors,
+                                            color = colors.indicatorColor(indicatorColorIndex + lineIndex),
+                                            modifier = Modifier
+                                                .align(Alignment.CenterEnd)
+                                                .width(config.priceAxisWidth)
+                                                .fillMaxSize(),
+                                        )
+                                    }
+                                }
+                                indicatorColorIndex += series.lines.size
+                            }
+                    }
                 }
                 OverlayLineLayer(
                     lines = overlayLines,
@@ -333,20 +464,6 @@ fun KlineChart(
                     maxPrice = visibleMax,
                     style = overlayStyle,
                     modifier = Modifier.fillMaxSize(),
-                )
-            }
-
-            if (config.showTimeAxis) {
-                TimeAxis(
-                    candles = candles,
-                    config = config,
-                    candleWidth = candleWidth,
-                    candleSpacing = candleSpacing,
-                    xOffset = gestureState.xOffset,
-                    colors = colors,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(config.timeAxisHeight),
                 )
             }
 
@@ -366,6 +483,7 @@ fun KlineChart(
                         config = config,
                         colors = colors,
                         indicatorSeries = indicatorSeries,
+                        timeTicks = timeTicks,
                         candleWidth = candleWidth,
                         candleSpacing = candleSpacing,
                         xOffset = gestureState.xOffset,
@@ -389,6 +507,7 @@ fun KlineChart(
                         config = config,
                         colors = colors,
                         indicatorSeries = indicatorSeries,
+                        timeTicks = timeTicks,
                         candleWidth = candleWidth,
                         candleSpacing = candleSpacing,
                         xOffset = gestureState.xOffset,
@@ -413,12 +532,37 @@ fun KlineChart(
                         candles = candles,
                         colors = colors,
                         values = indicatorSeries.firstOrNull { it.id == indicator.id }?.toIndicatorValues(),
+                        timeTicks = timeTicks,
                         candleWidth = candleWidth,
                         candleSpacing = candleSpacing,
                         xOffset = gestureState.xOffset,
                     )
                 }
             }
+
+            indicatorSeries
+                .filter { it.pane == KlineIndicatorPane.Sub && it.overlayId == null && it.id in standaloneExternalSubIndicatorIds }
+                .forEach { series ->
+                    ChartPanel(
+                        areaId = series.id,
+                        gestureState = gestureState,
+                        config = config,
+                        candles = candles,
+                        candleWidth = candleWidth,
+                        candleSpacing = candleSpacing,
+                        scrollBounds = scrollBounds,
+                        height = series.height ?: config.indicatorHeight,
+                    ) {
+                        IndicatorSeriesPanel(
+                            series = series,
+                            colors = colors,
+                            timeTicks = timeTicks,
+                            candleWidth = candleWidth,
+                            candleSpacing = candleSpacing,
+                            xOffset = gestureState.xOffset,
+                        )
+                    }
+                }
 
             customPanels.forEach { panel ->
                 ChartPanel(
@@ -441,6 +585,18 @@ fun KlineChart(
                         )
                     )
                 }
+            }
+
+            if (config.showTimeAxis) {
+                TimeAxis(
+                    candles = candles,
+                    config = config,
+                    timeTicks = timeTicks,
+                    colors = colors,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(config.timeAxisHeight),
+                )
             }
         }
 

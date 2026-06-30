@@ -19,9 +19,34 @@ internal fun DrawScope.drawLatestPriceLine(
     candleIndex: Int = candles.lastIndex,
 ) {
     if (candles.isEmpty() || maxPrice <= minPrice) return
-    val y = calculateValueY(price, minPrice, maxPrice, size.height)
+    drawLatestValueLine(
+        value = price,
+        valueIndex = candleIndex,
+        candleWidth = candleWidth,
+        candleSpacing = candleSpacing,
+        xOffset = xOffset,
+        minValue = minPrice,
+        maxValue = maxPrice,
+        chartWidth = chartWidth,
+        color = color,
+    )
+}
+
+internal fun DrawScope.drawLatestValueLine(
+    value: Double,
+    valueIndex: Int,
+    candleWidth: Float,
+    candleSpacing: Float,
+    xOffset: Float,
+    minValue: Double,
+    maxValue: Double,
+    chartWidth: Float,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    if (valueIndex < 0 || maxValue <= minValue) return
+    val y = calculateValueY(value, minValue, maxValue, size.height)
     if (y < 0f || y > size.height) return
-    val lastX = candleIndex * (candleWidth + candleSpacing) + xOffset + candleWidth / 2
+    val lastX = valueIndex * (candleWidth + candleSpacing) + xOffset + candleWidth / 2
     val startX = if (lastX in 0f..chartWidth) lastX else 0f
     drawLine(
         color = color,

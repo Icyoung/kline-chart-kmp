@@ -1,5 +1,6 @@
 package io.github.icyoung
 
+import androidx.compose.ui.unit.Dp
 import io.github.icyoung.indicator.TechnicalIndicators
 import io.github.icyoung.model.OhlcvCandle
 
@@ -8,10 +9,20 @@ enum class KlineIndicatorPane {
     Sub,
 }
 
+enum class KlineIndicatorAlignment {
+    Timestamp,
+    Index,
+}
+
 enum class KlineIndicatorLineStyle {
     Line,
     Histogram,
     Points,
+}
+
+enum class KlineIndicatorScaleMode {
+    SharedPriceAxis,
+    IndependentAxis,
 }
 
 data class KlineIndicatorLine(
@@ -23,6 +34,11 @@ data class KlineIndicatorLine(
 data class KlineIndicatorSeries(
     val id: String,
     val pane: KlineIndicatorPane,
+    val overlayId: String?,
+    val label: String,
+    val height: Dp?,
+    val scaleMode: KlineIndicatorScaleMode,
+    val showLatestValue: Boolean,
     val lines: List<KlineIndicatorLine>,
 )
 
@@ -33,21 +49,87 @@ fun interface KlineIndicatorFormula {
 data class KlineIndicator(
     val id: String,
     val pane: KlineIndicatorPane = KlineIndicatorPane.Sub,
+    val overlayId: String? = null,
+    val label: String = id,
+    val height: Dp? = null,
+    val sourceCandles: List<OhlcvCandle>? = null,
+    val alignment: KlineIndicatorAlignment = KlineIndicatorAlignment.Timestamp,
+    val scaleMode: KlineIndicatorScaleMode = KlineIndicatorScaleMode.SharedPriceAxis,
+    val showLatestValue: Boolean = false,
     val lookback: Int = Int.MAX_VALUE,
     val formula: KlineIndicatorFormula,
 ) {
     fun compute(candles: List<OhlcvCandle>): KlineIndicatorSeries {
-        return KlineIndicatorSeries(id, pane, formula.calculate(candles))
+        val source = sourceCandles ?: candles
+        val lines = formula.calculate(source)
+        return KlineIndicatorSeries(
+            id = id,
+            pane = pane,
+            overlayId = overlayId,
+            label = label,
+            height = height,
+            scaleMode = scaleMode,
+            showLatestValue = showLatestValue,
+            lines = alignLines(lines, source, candles),
+        )
     }
 }
 
 fun klineIndicator(
     id: String,
     pane: KlineIndicatorPane = KlineIndicatorPane.Sub,
+    overlayId: String? = null,
+    label: String = id,
+    height: Dp? = null,
+    sourceCandles: List<OhlcvCandle>? = null,
+    alignment: KlineIndicatorAlignment = KlineIndicatorAlignment.Timestamp,
+    scaleMode: KlineIndicatorScaleMode? = null,
+    showLatestValue: Boolean = false,
     lookback: Int = Int.MAX_VALUE,
     formula: (List<OhlcvCandle>) -> List<KlineIndicatorLine>,
 ): KlineIndicator {
-    return KlineIndicator(id = id, pane = pane, lookback = lookback, formula = KlineIndicatorFormula(formula))
+    return KlineIndicator(
+        id = id,
+        pane = pane,
+        overlayId = overlayId,
+        label = label,
+        height = height,
+        sourceCandles = sourceCandles,
+        alignment = alignment,
+        scaleMode = scaleMode ?: if (sourceCandles == null) {
+            KlineIndicatorScaleMode.SharedPriceAxis
+        } else {
+            KlineIndicatorScaleMode.IndependentAxis
+        },
+        showLatestValue = showLatestValue,
+        lookback = lookback,
+        formula = KlineIndicatorFormula(formula),
+    )
+}
+
+private fun KlineIndicator.alignLines(
+    lines: List<KlineIndicatorLine>,
+    source: List<OhlcvCandle>,
+    target: List<OhlcvCandle>,
+): List<KlineIndicatorLine> {
+    if (source === target || sourceCandles == null) return lines
+    return when (alignment) {
+        KlineIndicatorAlignment.Index -> lines.map { line ->
+            line.copy(values = target.indices.map { index -> line.values.getOrNull(index) })
+        }
+        KlineIndicatorAlignment.Timestamp -> {
+            val sourceIndexByTimestamp = source.indices.associateBy { source[it].timestamp }
+            lines.map { line ->
+                line.copy(
+                    values = target.map { candle ->
+                        sourceIndexByTimestamp[candle.timestamp]?.let { sourceIndex ->
+                            line.values.getOrNull(sourceIndex)
+                        }
+                    },
+                )
+            }
+        }
+    }
 }
 
 class KlineIndicatorSeriesCache {
@@ -87,6 +169,7 @@ fun computeKlineIndicatorSeries(
         indicators.mapIndexed { index, indicator ->
             val previous = previousSeries[index]
             val lookback = indicator.lookback
+            if (indicator.sourceCandles != null) return@mapIndexed indicator.compute(candles)
             if (lookback <= 0 || lookback >= candles.size) return@mapIndexed indicator.compute(candles)
 
             val window = candles.takeLast(lookback)
@@ -202,7 +285,7 @@ fun KlineChartConfig.builtInIndicators(): List<KlineIndicator> {
 }
 
 fun KlineCustomIndicator.asIndicator(): KlineIndicator {
-    return klineIndicator(id, KlineIndicatorPane.Sub) { candles ->
+    return klineIndicator(id = id, pane = KlineIndicatorPane.Sub, label = label) { candles ->
         calculator.calculate(candles).series.map { (name, values) ->
             KlineIndicatorLine(name, values)
         }

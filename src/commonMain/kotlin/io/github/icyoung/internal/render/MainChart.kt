@@ -19,12 +19,15 @@ import io.github.icyoung.CandleRenderContext
 import io.github.icyoung.KlineHistoryMarker
 import io.github.icyoung.KlineChartColors
 import io.github.icyoung.KlineChartConfig
+import io.github.icyoung.KlineIndicatorLine
 import io.github.icyoung.LastPriceMode
+import io.github.icyoung.KlineIndicatorPane
 import io.github.icyoung.KlineIndicatorLineStyle
+import io.github.icyoung.KlineIndicatorScaleMode
 import io.github.icyoung.KlineIndicatorSeries
-import io.github.icyoung.MainIndicator
 import io.github.icyoung.core.calculateVisibleRange
 import io.github.icyoung.indicatorColor
+import io.github.icyoung.internal.axis.TimeAxisTick
 import io.github.icyoung.internal.gesture.ChartGestureState
 import io.github.icyoung.model.OhlcvCandle
 import io.github.icyoung.util.formatChartValue
@@ -40,6 +43,7 @@ internal fun MainChartCanvas(
     gestureState: ChartGestureState,
     candleWidth: Float,
     candleSpacing: Float,
+    timeTicks: List<TimeAxisTick>,
     onRangeChanged: (Double, Double) -> Unit,
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -63,7 +67,7 @@ internal fun MainChartCanvas(
         onRangeChanged(visible.minValue, visible.maxValue)
         val renderRange = visible.indices.revealedBy(entranceProgress)
 
-        drawGrid(colors.grid, chartWidth, size.height)
+        drawGrid(colors.grid, chartWidth, size.height, timeTicks)
         when (config.chartStyle) {
             ChartStyle.Candlestick -> {
                 with(config.candleRenderer) {
@@ -96,47 +100,34 @@ internal fun MainChartCanvas(
                 )
             }
         }
-        if (MainIndicator.MA in config.mainIndicators) {
-            indicatorSeries.firstOrNull { it.id == "MA" }?.lines.orEmpty().forEachIndexed { index, line ->
-                drawLineIndicator(
-                    values = line.values,
-                    visibleRange = renderRange,
-                    candleWidth = candleWidth,
-                    candleSpacing = candleSpacing,
-                    xOffset = gestureState.xOffset,
-                    minValue = visible.minValue,
-                    maxValue = visible.maxValue,
-                    chartHeight = size.height,
-                    color = colors.indicatorColor(index),
-                )
-            }
-        }
-        if (MainIndicator.EMA in config.mainIndicators) {
-            indicatorSeries.firstOrNull { it.id == "EMA" }?.lines.orEmpty().forEachIndexed { index, line ->
-                drawLineIndicator(
-                    values = line.values,
-                    visibleRange = renderRange,
-                    candleWidth = candleWidth,
-                    candleSpacing = candleSpacing,
-                    xOffset = gestureState.xOffset,
-                    minValue = visible.minValue,
-                    maxValue = visible.maxValue,
-                    chartHeight = size.height,
-                    color = colors.indicatorColor(index + 1),
-                )
-            }
-        }
-        if (MainIndicator.BOLL in config.mainIndicators) {
-            indicatorSeries.firstOrNull { it.id == "BOLL" }?.lines.orEmpty().forEachIndexed { index, line ->
-                drawLineIndicator(line.values, renderRange, candleWidth, candleSpacing, gestureState.xOffset, visible.minValue, visible.maxValue, size.height, colors.indicatorColor(index))
-            }
-        }
-        if (MainIndicator.SAR in config.mainIndicators) {
-            indicatorSeries.firstOrNull { it.id == "SAR" }?.lines?.firstOrNull()?.let { line ->
-                if (line.style == KlineIndicatorLineStyle.Points) {
-                    drawSar(line.values, renderRange, candleWidth, candleSpacing, gestureState.xOffset, visible.minValue, visible.maxValue, size.height, colors.indicator4)
+        var indicatorColorIndex = 0
+        indicatorSeries
+            .filter { it.pane == KlineIndicatorPane.Main }
+            .forEach { series ->
+                val range = when (series.scaleMode) {
+                    KlineIndicatorScaleMode.SharedPriceAxis -> visible.minValue to visible.maxValue
+                    KlineIndicatorScaleMode.IndependentAxis -> visibleMinMax(
+                        candleWidth,
+                        candleSpacing,
+                        gestureState.xOffset,
+                        chartWidth,
+                        *series.lines.map { it.values }.toTypedArray(),
+                    )
                 }
-            }
+                series.lines.forEachIndexed { lineIndex, line ->
+                    drawMainIndicatorLine(
+                        line = line,
+                        visibleRange = renderRange,
+                        candleWidth = candleWidth,
+                        candleSpacing = candleSpacing,
+                        xOffset = gestureState.xOffset,
+                        minValue = range.first,
+                        maxValue = range.second,
+                        chartHeight = size.height,
+                        color = colors.indicatorColor(indicatorColorIndex + lineIndex),
+                    )
+                }
+                indicatorColorIndex += series.lines.size
         }
         if (config.showLatestPriceLine) {
             val latestPriceIndex = when (config.lastPriceMode) {
@@ -158,6 +149,39 @@ internal fun MainChartCanvas(
                 )
             }
         }
+        var latestValueColorIndex = 0
+        indicatorSeries
+            .filter { it.pane == KlineIndicatorPane.Main }
+            .forEach { series ->
+                if (series.showLatestValue) {
+                    val range = when (series.scaleMode) {
+                        KlineIndicatorScaleMode.SharedPriceAxis -> visible.minValue to visible.maxValue
+                        KlineIndicatorScaleMode.IndependentAxis -> visibleMinMax(
+                            candleWidth,
+                            candleSpacing,
+                            gestureState.xOffset,
+                            chartWidth,
+                            *series.lines.map { it.values }.toTypedArray(),
+                        )
+                    }
+                    series.lines.forEachIndexed { lineIndex, line ->
+                        val latest = line.latestVisibleValue(config.lastPriceMode, renderRange, candles.lastIndex)
+                            ?: return@forEachIndexed
+                        drawLatestValueLine(
+                            value = latest.value,
+                            valueIndex = latest.index,
+                            candleWidth = candleWidth,
+                            candleSpacing = candleSpacing,
+                            xOffset = gestureState.xOffset,
+                            minValue = range.first,
+                            maxValue = range.second,
+                            chartWidth = chartWidth,
+                            color = colors.indicatorColor(latestValueColorIndex + lineIndex),
+                        )
+                    }
+                }
+                latestValueColorIndex += series.lines.size
+            }
         if (config.showHighLowPriceLabels && config.chartStyle == ChartStyle.Candlestick) {
             drawHighLowLabels(
                 candles = candles,
@@ -193,6 +217,66 @@ internal fun MainChartCanvas(
     }
 }
 
+internal data class KlineLatestIndicatorValue(
+    val index: Int,
+    val value: Double,
+)
+
+internal fun KlineIndicatorLine.latestVisibleValue(
+    mode: LastPriceMode,
+    visibleRange: IntRange,
+    lastIndex: Int,
+): KlineLatestIndicatorValue? {
+    if (values.isEmpty() || lastIndex < 0) return null
+    val targetIndex = when (mode) {
+        LastPriceMode.Latest -> lastIndex
+        LastPriceMode.RightmostVisible -> if (visibleRange.isEmpty()) lastIndex else visibleRange.last
+    }.coerceIn(0, minOf(lastIndex, values.lastIndex))
+    for (index in targetIndex downTo 0) {
+        val value = values.getOrNull(index) ?: continue
+        return KlineLatestIndicatorValue(index, value)
+    }
+    return null
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMainIndicatorLine(
+    line: KlineIndicatorLine,
+    visibleRange: IntRange,
+    candleWidth: Float,
+    candleSpacing: Float,
+    xOffset: Float,
+    minValue: Double,
+    maxValue: Double,
+    chartHeight: Float,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    when (line.style) {
+        KlineIndicatorLineStyle.Line -> drawLineIndicator(
+            values = line.values,
+            visibleRange = visibleRange,
+            candleWidth = candleWidth,
+            candleSpacing = candleSpacing,
+            xOffset = xOffset,
+            minValue = minValue,
+            maxValue = maxValue,
+            chartHeight = chartHeight,
+            color = color,
+        )
+        KlineIndicatorLineStyle.Points -> drawSar(
+            values = line.values,
+            visibleRange = visibleRange,
+            candleWidth = candleWidth,
+            candleSpacing = candleSpacing,
+            xOffset = xOffset,
+            minValue = minValue,
+            maxValue = maxValue,
+            chartHeight = chartHeight,
+            color = color,
+        )
+        KlineIndicatorLineStyle.Histogram -> Unit
+    }
+}
+
 private fun IntRange.revealedBy(progress: Float): IntRange {
     if (isEmpty()) return this
     val clamped = progress.coerceIn(0f, 1f)
@@ -212,8 +296,10 @@ internal fun MainIndicatorLabels(
     if (candles.isEmpty()) return
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         val style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
-        if (MainIndicator.MA in config.mainIndicators) {
-            indicatorSeries.firstOrNull { it.id == "MA" }?.lines.orEmpty().forEachIndexed { index, line ->
+        indicatorSeries
+            .filter { it.pane == KlineIndicatorPane.Main }
+            .flatMap { it.lines }
+            .forEachIndexed { index, line ->
                 val value = line.values.lastOrNull { it != null }
                 if (value != null) {
                     Text(
@@ -224,6 +310,5 @@ internal fun MainIndicatorLabels(
                     )
                 }
             }
-        }
     }
 }
