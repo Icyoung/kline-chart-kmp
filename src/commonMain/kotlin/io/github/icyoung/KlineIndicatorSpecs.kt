@@ -55,8 +55,19 @@ object KlineBuiltInIndicatorSpecs {
         parameters = listOf(period("period", "Period", 9.0), period("kSmooth", "K Smooth", 3.0), period("dSmooth", "D Smooth", 3.0)),
     )
 
+    val WR = SubIndicatorSpec(
+        id = "WR",
+        label = "WR",
+        parameters = listOf(period("period", "Period", 14.0)),
+    )
+
+    val OBV = SubIndicatorSpec(
+        id = "OBV",
+        label = "OBV",
+    )
+
     val mainIndicators = listOf(MA, EMA, BOLL, SAR)
-    val subIndicators = listOf(VOL, MACD, RSI, KDJ)
+    val subIndicators = listOf(VOL, MACD, RSI, KDJ, WR, OBV)
 
     private fun period(id: String, label: String, defaultValue: Double): KlineIndicatorParameterSpec {
         return KlineIndicatorParameterSpec(id, label, defaultValue, 1.0..250.0, step = 1.0)

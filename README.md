@@ -29,13 +29,13 @@ import io.github.icyoung.KlineChart
 ```kotlin
 val dataState = rememberKlineChartDataState(initialCandles)
 
-// Replace all data and rebuild indicator cache.
+// Replace all data.
 dataState.replaceAll(candles)
 
 // Timestamp-based realtime update:
 // - same timestamp as last candle: update last
 // - greater timestamp: append
-// - existing historical timestamp: replace existing and recompute affected cache
+// - existing historical timestamp: replace existing
 dataState.update(realtimeCandle)
 
 KlineChart(
@@ -44,7 +44,9 @@ KlineChart(
         chartStyle = ChartStyle.Candlestick,
         pricePrecision = 2,
         mainIndicators = setOf(MainIndicator.MA, MainIndicator.BOLL),
-        subIndicators = listOf(SubIndicator.MACD, SubIndicator.RSI),
+        subIndicators = listOf(SubIndicator.MACD, SubIndicator.RSI, SubIndicator.WR, SubIndicator.OBV),
+        lastPriceMode = LastPriceMode.Latest,
+        crosshairDismiss = CrosshairDismiss.Persistent,
         timeLabelFormatter = { timestamp -> timestamp.toString() },
     ),
     colors = KlineChartColors(),
@@ -63,8 +65,12 @@ published library.
 - Visible-range high/low price labels.
 - Crosshair with replaceable info panel.
 - Pinch zoom, horizontal drag, inertia, and load-more callback.
-- Volume panel and built-in technical indicators: MA, EMA, BOLL, SAR, MACD, RSI, KDJ.
-- Incremental data state and indicator cache via `KlineChartDataState`.
+- Volume panel and built-in technical indicators: MA, EMA, BOLL, SAR, MACD, RSI, KDJ, WR, OBV.
+- Background indicator computation with cached realtime tail updates where the formula supports exact lookback calculation.
+- Configurable latest-price source through `LastPriceMode`.
+- Configurable crosshair release behavior through `CrosshairDismiss`.
+- Optional entrance and panel add/remove animations.
+- Incremental data state via `KlineChartDataState`.
 - Generic history markers and price-level overlay lines.
 - Custom candle renderer, custom indicator renderer, custom panels, and overlay slot.
 - Built-in indicator metadata through `KlineBuiltInIndicatorSpecs`.
@@ -76,11 +82,12 @@ published library.
 - `KlineChartConfig`: layout, axes, indicators, precision, interaction, and overlay options.
 - `KlineChartColors`: chart styling.
 - `KlineChartState`: viewport and crosshair state for host synchronization.
-- `KlineChartDataState`: list replacement, timestamp-based updates, and indicator cache.
+- `KlineChartDataState`: list replacement, historical prepend, and timestamp-based realtime updates.
 - `KlineOverlayLine`: generic price-level line and label.
 - `KlineHistoryMarker`: above/below candle annotations.
 - `KlinePanelSpec`: custom panel slot.
 - `KlineCustomIndicator`: custom indicator calculation and drawing.
+- `KlineIndicator`: reusable indicator formula abstraction for built-in and custom series.
 - `CandleRenderer`: replaceable candle renderer.
 
 Implementation packages under `io.github.icyoung.internal.*` are not stable API.

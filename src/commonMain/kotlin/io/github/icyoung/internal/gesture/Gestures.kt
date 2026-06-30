@@ -17,6 +17,9 @@ internal fun Modifier.klineGestures(
     scrollBounds: Pair<Float, Float>,
     onTap: (areaId: String, position: Offset) -> Boolean = { _, _ -> false },
 ): Modifier {
+    val candleWidth = (config.baseCandleWidth * gestureState.zoom)
+        .coerceIn(config.minCandleWidth, config.maxCandleWidth)
+    val candleSpacing = config.candleSpacing
     return this
         .pointerInput(candles.size, gestureState.canvasSize, gestureState.zoom, config.baseCandleWidth, config.candleSpacing) {
             awaitPointerEventScope {
@@ -41,9 +44,17 @@ internal fun Modifier.klineGestures(
                 }
             }
         }
-        .pointerInput(candles.size, gestureState.canvasSize, gestureState.zoom, scrollBounds) {
+        .pointerInput(candles.size, gestureState.canvasSize, gestureState.zoom, scrollBounds, config.crosshairDismiss) {
             with(gestureState) {
-                handleGestures(areaId, { scrollBounds }, onTap)
+                handleGestures(
+                    areaId = areaId,
+                    crosshairDismiss = config.crosshairDismiss,
+                    candleCount = candles.size,
+                    candleWidth = candleWidth,
+                    candleSpacing = candleSpacing,
+                    scrollBounds = { scrollBounds },
+                    onTap = onTap,
+                )
             }
         }
 }

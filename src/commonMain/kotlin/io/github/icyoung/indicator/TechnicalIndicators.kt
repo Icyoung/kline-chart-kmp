@@ -220,6 +220,43 @@ object TechnicalIndicators {
         }
     }
 
+    fun <T> calculateWR(
+        items: List<T>,
+        period: Int = 14,
+        high: (T) -> Double,
+        low: (T) -> Double,
+        close: (T) -> Double,
+    ): List<Double?> {
+        if (period <= 0) return List(items.size) { null }
+        return items.indices.map { index ->
+            if (index < period - 1) {
+                null
+            } else {
+                val window = items.subList(index - period + 1, index + 1)
+                val highest = window.maxOf(high)
+                val lowest = window.minOf(low)
+                if (highest == lowest) 0.0 else (highest - close(items[index])) / (highest - lowest) * 100.0
+            }
+        }
+    }
+
+    fun <T> calculateOBV(items: List<T>, close: (T) -> Double, volume: (T) -> Double): List<Double?> {
+        if (items.isEmpty()) return emptyList()
+        val result = MutableList<Double?>(items.size) { null }
+        var obv = 0.0
+        result[0] = obv
+        for (index in 1 until items.size) {
+            val change = close(items[index]) - close(items[index - 1])
+            obv += when {
+                change > 0.0 -> volume(items[index])
+                change < 0.0 -> -volume(items[index])
+                else -> 0.0
+            }
+            result[index] = obv
+        }
+        return result
+    }
+
     fun <T> calculateSAR(
         items: List<T>,
         acceleration: Double = 0.02,

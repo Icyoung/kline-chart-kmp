@@ -77,6 +77,7 @@ fun SampleApp() {
     val dataState = rememberKlineChartDataState(sampleCandles())
     val candles = dataState.candles
     var isLoading by remember { mutableStateOf(false) }
+    var isLoadingMore by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Sample data") }
     var selectedMainIndicators by remember { mutableStateOf(setOf("MA")) }
     var selectedSubIndicators by remember { mutableStateOf(setOf("VOL")) }
@@ -95,6 +96,33 @@ fun SampleApp() {
                 status = error.message?.takeIf { it.isNotBlank() } ?: "Sample data"
             }
             isLoading = false
+        }
+    }
+
+    fun loadMoreHistoricalCandles() {
+        val firstTimestamp = dataState.candles.firstOrNull()?.timestamp ?: return
+        if (isLoading || isLoadingMore) return
+        scope.launch {
+            isLoadingMore = true
+            status = "Loading earlier $selectedInstrumentId $selectedBar"
+            runCatching {
+                dataSource.candles(
+                    instrumentId = selectedInstrumentId,
+                    bar = selectedBar,
+                    limit = 120,
+                    endTimeMillis = firstTimestamp - 1L,
+                )
+            }.onSuccess { historicalCandles ->
+                val inserted = dataState.prepend(historicalCandles)
+                status = if (inserted > 0) {
+                    "Loaded $inserted earlier candles"
+                } else {
+                    "No earlier candles"
+                }
+            }.onFailure { error ->
+                status = error.message?.takeIf { it.isNotBlank() } ?: "Load earlier failed"
+            }
+            isLoadingMore = false
         }
     }
 
@@ -146,7 +174,7 @@ fun SampleApp() {
                 MarketHeader(
                     instrument = selectedInstrumentId,
                     instruments = instruments.map { it.id }.ifEmpty { listOf(selectedInstrumentId) },
-                    isLoading = isLoading,
+                    isLoading = isLoading || isLoadingMore,
                     candles = candles,
                     status = status,
                     onInstrumentSelected = { value ->
@@ -172,6 +200,8 @@ fun SampleApp() {
                             chartStyle = ChartStyle.Candlestick,
                             pricePrecision = 2,
                             showCrosshairInfoPanel = false,
+                            entranceAnimation = true,
+                            panelAnimation = true,
                             showVolume = "VOL" in selectedSubIndicators,
                             volumeHeight = 104.dp,
                             indicatorHeight = 104.dp,
@@ -188,6 +218,7 @@ fun SampleApp() {
                         onHistoryMarkerClick = { marker ->
                             status = "Marker ${marker.label} @ ${marker.price.formatPrice()}"
                         },
+                        onLoadMoreHistoricalData = ::loadMoreHistoricalCandles,
                     )
                 }
 
@@ -480,6 +511,8 @@ private fun Set<String>.toSubIndicators(): List<SubIndicator> {
         SubIndicator.MACD.takeIf { "MACD" in this },
         SubIndicator.RSI.takeIf { "RSI" in this },
         SubIndicator.KDJ.takeIf { "KDJ" in this },
+        SubIndicator.WR.takeIf { "WR" in this },
+        SubIndicator.OBV.takeIf { "OBV" in this },
     )
 }
 

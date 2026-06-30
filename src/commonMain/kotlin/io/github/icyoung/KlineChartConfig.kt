@@ -30,6 +30,10 @@ data class KlineChartConfig(
     val showLatestPriceLabel: Boolean = true,
     val showHighLowPriceLabels: Boolean = true,
     val showCrosshairInfoPanel: Boolean = true,
+    val lastPriceMode: LastPriceMode = LastPriceMode.Latest,
+    val crosshairDismiss: CrosshairDismiss = CrosshairDismiss.Persistent,
+    val entranceAnimation: Boolean = false,
+    val panelAnimation: Boolean = false,
     val priceAxisTickCount: Int = 6,
     val timeAxisLabelCount: Int = 4,
     val lineStyle: KlineLineStyle = KlineLineStyle(),
@@ -42,6 +46,7 @@ data class KlineChartConfig(
     val emaPeriods: List<Int> = listOf(7, 25, 99),
     val volumeMaPeriods: List<Int> = listOf(5, 10),
     val rsiPeriods: List<Int> = listOf(6, 12, 24),
+    val wrPeriods: List<Int> = listOf(14),
     val bollPeriod: Int = 20,
     val bollStdDevMultiplier: Double = 2.0,
     val macdFastPeriod: Int = 12,
@@ -86,6 +91,7 @@ data class KlineChartConfig(
             emaPeriods = emaPeriods,
             volumeMaPeriods = volumeMaPeriods,
             rsiPeriods = rsiPeriods,
+            wrPeriods = wrPeriods,
             bollPeriod = bollPeriod,
             bollStdDevMultiplier = bollStdDevMultiplier,
             macdFastPeriod = macdFastPeriod,
@@ -102,6 +108,10 @@ data class KlineChartConfig(
             showLatestPriceLabel = showLatestPriceLabel,
             showHighLowPriceLabels = showHighLowPriceLabels,
             showCrosshairInfoPanel = showCrosshairInfoPanel,
+            lastPriceMode = lastPriceMode,
+            crosshairDismiss = crosshairDismiss,
+            entranceAnimation = entranceAnimation,
+            panelAnimation = panelAnimation,
             crosshairLabelFormatter = crosshairLabelFormatter,
         )
 }
@@ -139,6 +149,7 @@ data class KlineIndicatorConfig(
     val emaPeriods: List<Int> = listOf(7, 25, 99),
     val volumeMaPeriods: List<Int> = listOf(5, 10),
     val rsiPeriods: List<Int> = listOf(6, 12, 24),
+    val wrPeriods: List<Int> = listOf(14),
     val bollPeriod: Int = 20,
     val bollStdDevMultiplier: Double = 2.0,
     val macdFastPeriod: Int = 12,
@@ -155,6 +166,10 @@ data class KlineOverlayConfig(
     val showLatestPriceLabel: Boolean = true,
     val showHighLowPriceLabels: Boolean = true,
     val showCrosshairInfoPanel: Boolean = true,
+    val lastPriceMode: LastPriceMode = LastPriceMode.Latest,
+    val crosshairDismiss: CrosshairDismiss = CrosshairDismiss.Persistent,
+    val entranceAnimation: Boolean = false,
+    val panelAnimation: Boolean = false,
     val crosshairLabelFormatter: ((CrosshairLabelContext) -> String?)? = null,
 )
 
@@ -215,6 +230,10 @@ fun KlineChartConfig(
         showLatestPriceLabel = overlays.showLatestPriceLabel,
         showHighLowPriceLabels = overlays.showHighLowPriceLabels,
         showCrosshairInfoPanel = overlays.showCrosshairInfoPanel,
+        lastPriceMode = overlays.lastPriceMode,
+        crosshairDismiss = overlays.crosshairDismiss,
+        entranceAnimation = overlays.entranceAnimation,
+        panelAnimation = overlays.panelAnimation,
         priceAxisTickCount = axis.priceAxisTickCount,
         timeAxisLabelCount = axis.timeAxisLabelCount,
         lineStyle = lineStyle,
@@ -227,6 +246,7 @@ fun KlineChartConfig(
         emaPeriods = indicators.emaPeriods,
         volumeMaPeriods = indicators.volumeMaPeriods,
         rsiPeriods = indicators.rsiPeriods,
+        wrPeriods = indicators.wrPeriods,
         bollPeriod = indicators.bollPeriod,
         bollStdDevMultiplier = indicators.bollStdDevMultiplier,
         macdFastPeriod = indicators.macdFastPeriod,
@@ -243,6 +263,16 @@ fun KlineChartConfig(
 enum class ChartStyle {
     Candlestick,
     Line,
+}
+
+enum class LastPriceMode {
+    Latest,
+    RightmostVisible,
+}
+
+enum class CrosshairDismiss {
+    OnRelease,
+    Persistent,
 }
 
 data class KlineHistoryMarker(
@@ -306,6 +336,8 @@ enum class SubIndicator {
     MACD,
     RSI,
     KDJ,
+    WR,
+    OBV,
 }
 
 data class KlineChartColors(

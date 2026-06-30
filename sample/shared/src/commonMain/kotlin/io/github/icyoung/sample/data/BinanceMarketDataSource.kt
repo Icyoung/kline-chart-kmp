@@ -38,11 +38,15 @@ class BinanceMarketDataSource(
         instrumentId: String,
         bar: String,
         limit: Int,
+        endTimeMillis: Long?,
     ): List<OhlcvCandle> {
         val response = client.get("$BinanceBaseUrl/api/v3/klines") {
             parameter("symbol", instrumentId)
             parameter("interval", bar)
             parameter("limit", limit.coerceIn(1, 1000))
+            if (endTimeMillis != null) {
+                parameter("endTime", endTimeMillis)
+            }
         }.body<List<List<JsonElement>>>()
 
         return response.mapNotNull { row -> row.toCandle() }

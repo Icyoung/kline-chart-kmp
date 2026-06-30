@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Added unified `KlineIndicator`/`KlineIndicatorSeries` abstraction for built-in and custom indicators.
+- Moved chart indicator computation onto a background path with exact lookback caching for formulas that support it.
+- Updated volume and sub-indicator panels to render from computed indicator series instead of recalculating indicators in each panel.
+- Removed the old `KlineIndicatorCache` data-state cache path.
+- Added WR and OBV built-in indicators.
+- Added `LastPriceMode`, `CrosshairDismiss`, entrance animation, and panel animation configuration.
+
 ## 0.1.2
 
 - Changed Maven coordinates back to `io.github.icyoung:kline-chart-kmp`.

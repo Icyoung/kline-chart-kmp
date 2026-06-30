@@ -121,7 +121,6 @@ internal fun LatestPriceLabel(
             val heightPx = maxHeight.toPx()
             val labelHeightPx = labelHeight.toPx()
             val y = calculateValueY(price, minPrice, maxPrice, heightPx)
-            if (y < 0f || y > heightPx) return@with
             val offsetY = (y - labelHeightPx / 2f)
                 .coerceIn(0f, (heightPx - labelHeightPx).coerceAtLeast(0f))
                 .toDp()

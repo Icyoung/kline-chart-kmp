@@ -16,12 +16,12 @@ internal fun DrawScope.drawLatestPriceLine(
     maxPrice: Double,
     chartWidth: Float,
     color: androidx.compose.ui.graphics.Color,
+    candleIndex: Int = candles.lastIndex,
 ) {
     if (candles.isEmpty() || maxPrice <= minPrice) return
     val y = calculateValueY(price, minPrice, maxPrice, size.height)
     if (y < 0f || y > size.height) return
-    val lastIndex = candles.lastIndex
-    val lastX = lastIndex * (candleWidth + candleSpacing) + xOffset + candleWidth / 2
+    val lastX = candleIndex * (candleWidth + candleSpacing) + xOffset + candleWidth / 2
     val startX = if (lastX in 0f..chartWidth) lastX else 0f
     drawLine(
         color = color,

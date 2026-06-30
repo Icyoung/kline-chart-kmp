@@ -9,6 +9,7 @@ interface MarketDataSource {
         instrumentId: String,
         bar: String,
         limit: Int = 180,
+        endTimeMillis: Long? = null,
     ): List<OhlcvCandle>
 }
 

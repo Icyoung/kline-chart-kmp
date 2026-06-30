@@ -15,6 +15,7 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.Density
+import io.github.icyoung.CrosshairDismiss
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -33,7 +34,7 @@ internal class ChartGestureState(
     private var inertiaJob: Job? = null
     private var originAreaId: String = MainAreaId
     private var requestedLoadMore = false
-    private var loadingMore = false
+    private var scrollFromEndPx by mutableStateOf(0f)
 
     var zoom by mutableStateOf(1f)
         private set
@@ -65,37 +66,31 @@ internal class ChartGestureState(
 
     fun areaHeight(areaId: String): Float = areaHeight[areaId] ?: canvasSize.height
 
-    fun setInitialPosition(
+    fun syncViewport(
         candleCount: Int,
         candleWidth: Float,
         candleSpacing: Float,
-        calculateBounds: (Float, Float, Float) -> Pair<Float, Float>,
+        leftBound: Float,
+        rightBound: Float,
     ) {
-        if (!isInitialPosition || canvasSize == Size.Zero || candleCount < 10) return
-
-        val step = candleWidth + candleSpacing
-        val targetScreenPosition = canvasSize.width * 0.75f
-        val totalWidth = candleCount * step
-        xOffset = if (totalWidth > targetScreenPosition) {
-            val targetOffset = targetScreenPosition - (candleCount - 1) * step - candleWidth / 2
-            val (leftBound, rightBound) = calculateBounds(candleWidth, candleSpacing, canvasSize.width)
-            targetOffset.coerceIn(leftBound, rightBound)
-        } else {
-            (canvasSize.width - totalWidth) / 2f
+        if (canvasSize == Size.Zero || candleCount <= 0) return
+        if (isInitialPosition) {
+            scrollFromEndPx = 0f
+            isInitialPosition = false
         }
-        isInitialPosition = false
+        setOffsetFromEnd(candleCount, candleWidth, candleSpacing, leftBound, rightBound)
     }
 
-    fun onHistoricalDataLoaded(previousCount: Int, currentCount: Int, candleWidth: Float, candleSpacing: Float) {
-        if (previousCount > 0 && currentCount > previousCount) {
-            xOffset += (currentCount - previousCount) * (candleWidth + candleSpacing)
-            requestedLoadMore = false
-            loadingMore = false
-        }
+    fun resetInitialPosition() {
+        stopInertia()
+        hideCrosshair()
+        requestedLoadMore = false
+        scrollFromEndPx = 0f
+        isInitialPosition = true
     }
 
-    fun clampOffset(leftBound: Float, rightBound: Float) {
-        xOffset = xOffset.coerceIn(leftBound, rightBound)
+    fun markHistoricalDataLoaded() {
+        requestedLoadMore = false
     }
 
     fun handleZoom(
@@ -127,7 +122,7 @@ internal class ChartGestureState(
         val newXOffset = centerX - (anchorIndex * newStep + newCandleWidth / 2)
         val (leftBound, rightBound) = calculateBounds(newCandleWidth, baseCandleSpacing, canvasSize.width)
 
-        xOffset = newXOffset.coerceIn(leftBound, rightBound)
+        setOffset(newXOffset.coerceIn(leftBound, rightBound), candleCount, newCandleWidth, baseCandleSpacing)
         zoom = newZoom
         isInitialPosition = false
     }
@@ -174,21 +169,32 @@ internal class ChartGestureState(
         inertiaJob = null
     }
 
-    private fun startInertia(initialVelocity: Float, leftBound: Float, rightBound: Float) {
+    private fun startInertia(
+        initialVelocity: Float,
+        leftBound: Float,
+        rightBound: Float,
+        candleCount: Int,
+        candleWidth: Float,
+        candleSpacing: Float,
+    ) {
         inertiaJob?.cancel()
         inertiaJob = scope.launch {
             val decay = splineBasedDecay<Float>(density)
             val animatable = Animatable(xOffset)
             animatable.updateBounds(leftBound, rightBound)
             animatable.animateDecay(initialVelocity, decay) {
-                xOffset = value
+                setOffset(value, candleCount, candleWidth, candleSpacing)
             }
-            xOffset = animatable.value.coerceIn(leftBound, rightBound)
+            setOffset(animatable.value.coerceIn(leftBound, rightBound), candleCount, candleWidth, candleSpacing)
         }
     }
 
     suspend fun PointerInputScope.handleGestures(
         areaId: String,
+        crosshairDismiss: CrosshairDismiss,
+        candleCount: Int,
+        candleWidth: Float,
+        candleSpacing: Float,
         scrollBounds: () -> Pair<Float, Float>,
         onTap: (areaId: String, position: Offset) -> Boolean = { _, _ -> false },
     ) {
@@ -244,15 +250,14 @@ internal class ChartGestureState(
                         if (isDragging) {
                             val (leftBound, rightBound) = scrollBounds()
                             val nextOffset = (xOffset + pointer.positionChange().x).coerceIn(leftBound, rightBound)
-                            xOffset = nextOffset
+                            setOffset(nextOffset, candleCount, candleWidth, candleSpacing)
                             velocityTracker.addPosition(pointer.uptimeMillis, pointer.position)
                             isInitialPosition = false
 
-                            if (pointer.positionChange().x > 0 && !loadingMore && !requestedLoadMore) {
+                            if (pointer.positionChange().x > 0 && !requestedLoadMore) {
                                 val threshold = canvasSize.width * 0.2f
                                 if (nextOffset > -threshold) {
                                     requestedLoadMore = true
-                                    loadingMore = true
                                     onLoadMore()
                                 }
                             }
@@ -271,6 +276,9 @@ internal class ChartGestureState(
                                 initialVelocity = velocity.x.coerceIn(-6000f, 6000f) * 1.1f,
                                 leftBound = leftBound,
                                 rightBound = rightBound,
+                                candleCount = candleCount,
+                                candleWidth = candleWidth,
+                                candleSpacing = candleSpacing,
                             )
                         }
                     }
@@ -280,7 +288,11 @@ internal class ChartGestureState(
                         }
                     }
                 }
+                if (isLongPress && crosshairDismiss == CrosshairDismiss.OnRelease) {
+                    hideCrosshair()
+                }
             } finally {
+                requestedLoadMore = false
                 longPressJob.cancel()
             }
         }
@@ -288,5 +300,41 @@ internal class ChartGestureState(
 
     companion object {
         const val MainAreaId = "MAIN"
+    }
+
+    private fun setOffsetFromEnd(
+        candleCount: Int,
+        candleWidth: Float,
+        candleSpacing: Float,
+        leftBound: Float,
+        rightBound: Float,
+    ) {
+        val targetOffset = offsetFromEnd(candleCount, candleWidth, candleSpacing, scrollFromEndPx)
+            .coerceIn(leftBound, rightBound)
+        setOffset(targetOffset, candleCount, candleWidth, candleSpacing)
+    }
+
+    private fun setOffset(offset: Float, candleCount: Int, candleWidth: Float, candleSpacing: Float) {
+        xOffset = offset
+        scrollFromEndPx = scrollFromOffset(offset, candleCount, candleWidth, candleSpacing)
+    }
+
+    private fun offsetFromEnd(
+        candleCount: Int,
+        candleWidth: Float,
+        candleSpacing: Float,
+        scrollFromEnd: Float,
+    ): Float {
+        val latestIndex = (candleCount - 1).coerceAtLeast(0)
+        val step = candleWidth + candleSpacing
+        val targetLatestX = canvasSize.width * 0.75f + scrollFromEnd
+        return targetLatestX - latestIndex * step - candleWidth / 2f
+    }
+
+    private fun scrollFromOffset(offset: Float, candleCount: Int, candleWidth: Float, candleSpacing: Float): Float {
+        val latestIndex = (candleCount - 1).coerceAtLeast(0)
+        val step = candleWidth + candleSpacing
+        val latestX = latestIndex * step + offset + candleWidth / 2f
+        return latestX - canvasSize.width * 0.75f
     }
 }
